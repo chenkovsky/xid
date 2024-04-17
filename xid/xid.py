@@ -8,6 +8,7 @@ import platform
 import threading
 import time
 from typing import Union
+import itertools
 
 logger = logging.getLogger("xid")
 
@@ -35,19 +36,9 @@ def read_machine_id() -> bytes:
         return os.urandom(3)
 
 
-def generate_next_id():
-    id_ = rand_int()
-
-    while True:
-        new_id = id_ + 1
-        id_ += 1
-        yield new_id
-
-
 machine_id = read_machine_id()
 pid = os.getpid()
-xid_generator = generate_next_id()
-lock = threading.Lock()
+xid_generator = itertools.count(rand_int())
 
 
 class InvalidXID(Exception):
@@ -91,9 +82,7 @@ class XID:
         id_[8] = _uint8(pid & 0xFF)
 
         # Increment, 3 bytes, big endian
-        lock.acquire()
         i = next(xid_generator)
-        lock.release()
         id_[9] = _uint8(i >> 16 & 0xFF)
         id_[10] = _uint8(i >> 8 & 0xFF)
         id_[11] = _uint8(i & 0xFF)
