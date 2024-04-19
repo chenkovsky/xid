@@ -27,7 +27,7 @@ def rand_int() -> int:
 def read_machine_id() -> bytes:
     try:
         hostname = platform.node()
-        hw = hashlib.md5()
+        hw = hashlib.md5(usedforsecurity=False)
         hw.update(hostname.encode("utf-8"))
         return hw.digest()[:3]
     except Exception as e:  # pragma: no cover
@@ -35,19 +35,9 @@ def read_machine_id() -> bytes:
         return os.urandom(3)
 
 
-def generate_next_id():
-    id_ = rand_int()
-
-    while True:
-        new_id = id_ + 1
-        id_ += 1
-        yield new_id
-
-
 machine_id = read_machine_id()
 pid = os.getpid()
-xid_generator = generate_next_id()
-lock = threading.Lock()
+xid_generator = itertools.count(rand_int())
 
 
 class InvalidXID(Exception):
@@ -57,11 +47,13 @@ class InvalidXID(Exception):
 
 
 class XID:
-    def __init__(self, id_: Union[bytes, str] = None, t: time.time = None):
+    def __init__(
+        self, id_: Union[bytes, str, None] = None, t: float | int | None = None
+    ):
         if t is None:
             self.t = int(time.time())
         else:
-            self.t = t
+            self.t = int(t)
 
         if id_ is None:
             self.id = self._generate_new_xid(self.t)
@@ -76,7 +68,7 @@ class XID:
                 raise TypeError()
 
     @staticmethod
-    def _generate_new_xid(t: time.time):
+    def _generate_new_xid(t: int):
         id_ = bytearray(RAW_LEN)
 
         # Timestamp, 4 bytes, big endian
@@ -91,9 +83,7 @@ class XID:
         id_[8] = _uint8(pid & 0xFF)
 
         # Increment, 3 bytes, big endian
-        lock.acquire()
         i = next(xid_generator)
-        lock.release()
         id_[9] = _uint8(i >> 16 & 0xFF)
         id_[10] = _uint8(i >> 8 & 0xFF)
         id_[11] = _uint8(i & 0xFF)
@@ -134,7 +124,7 @@ class XID:
         return bytes(dst)
 
     @staticmethod
-    def _decode(xid: XID, src: bytes, dec=None) -> XID:
+    def _decode(xid: "XID", src: bytes, dec=None) -> "XID":
         if dec:
             dec = dec
         else:
@@ -207,22 +197,26 @@ class XID:
     def __hash__(self):
         return hash(self.id)
 
-    def __eq__(self, other: XID) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, XID):
+            return False
         return self.string() == other.string()
 
-    def __ne__(self, other: XID) -> bool:
+    def __ne__(self, other: object) -> bool:
+        if not isinstance(other, XID):
+            return True
         return self.string() != other.string()
 
-    def __lt__(self, other: XID) -> bool:
+    def __lt__(self, other: "XID") -> bool:
         return self.string() < other.string()
 
-    def __le__(self, other: XID) -> bool:
+    def __le__(self, other: "XID") -> bool:
         return self.string() <= other.string()
 
-    def __gt__(self, other: XID) -> bool:
+    def __gt__(self, other: "XID") -> bool:
         return self.string() > other.string()
 
-    def __ge__(self, other: XID) -> bool:
+    def __ge__(self, other: "XID") -> bool:
         return self.string() >= other.string()
 
     def __repr__(self):
